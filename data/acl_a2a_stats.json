@@ -1,0 +1,19 @@
+{
+ "n_seeds_any_qualifying": 28688,
+ "n_seeds_eligible": 10343,
+ "n_seeds": 1000,
+ "n_pairs": 57794,
+ "n_dev": 95,
+ "elapsed_s": 3.2,
+ "params": {
+  "seed_year_min": 2012,
+  "seed_year_max": 2022,
+  "abstract_min_chars": 400,
+  "abstract_max_chars": 3500,
+  "min_citers": 20,
+  "min_citer_citations": 0,
+  "n_seeds": 1000,
+  "citers_per_seed": 100,
+  "dev_mod": 10
+ }
+}

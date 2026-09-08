@@ -1,0 +1,15 @@
+duckdb>=1.0
+pyarrow>=15
+pandas>=2.0
+numpy>=1.26
+scipy>=1.11
+requests
+tqdm
+orjson
+sentence-transformers>=3.0
+sacrebleu>=2.4
+rouge-score
+matplotlib>=3.8
+pytest>=8
+# generation only (needs a CUDA wheel matching your driver):
+# vllm>=0.10
