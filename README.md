@@ -9,8 +9,9 @@ chance.
 **Data.** Seeds are ACL Anthology papers (Semantic Scholar `externalids.ACL`),
 targets are their citing papers from *any* venue or field, with abstracts from
 the Semantic Scholar Datasets API. The benchmark cut used in the paper has
-1,000 seeds (2012-2022, at least 20 qualifying citers) with up to 100 citers
-each; a 10% dev split calibrates the threshold, the rest is scored once.
+13,194 seeds (ACL Anthology papers between the 80th and 99th citation-count percentile,
+any year) with every qualifying citer, 828 K pairs; a 10% dev split calibrates the
+threshold, the rest is scored once.
 
 **Why this task.** A paper's citing literature is a realised, textual record
 of where its ideas went. Anticipating it from the abstract alone asks a model
@@ -67,7 +68,8 @@ bash scripts/run_pipeline.sh download
 
 # corpus (minutes) and benchmark cut
 python scripts/build_acl_corpus.py all
-python scripts/make_benchmark.py --out data/acl_a2a.jsonl
+python scripts/make_benchmark.py --derived-root $A2A_DERIVED_ROOT --out data/acl_a2a.jsonl
+python scripts/visualise.py            # distribution of the cut -> images/*.png
 
 # section 1: characterise the targets (1 GPU for embeddings)
 python scripts/characterize.py --data data/acl_a2a.jsonl --corpus-root $A2A_DERIVED_ROOT/acl_corpus

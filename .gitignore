@@ -6,7 +6,7 @@ __pycache__/
 .venv/
 .env
 .ipynb_checkpoints/
-
+.claude
 # large artefacts: raw S2 shards, parquet, benchmark text, embeddings, generations
 *.gz
 *.parquet
