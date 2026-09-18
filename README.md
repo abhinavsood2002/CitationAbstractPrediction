@@ -7,11 +7,14 @@ by at least one prediction, at a similarity threshold calibrated against
 chance.
 
 **Data.** Seeds are ACL Anthology papers (Semantic Scholar `externalids.ACL`),
-targets are their citing papers from *any* venue or field, with abstracts from
-the Semantic Scholar Datasets API. The benchmark cut used in the paper has
-13,194 seeds (ACL Anthology papers between the 80th and 99th citation-count percentile,
-any year) with every qualifying citer, 828 K pairs; a 10% dev split calibrates the
-threshold, the rest is scored once.
+targets are the papers that cite them *influentially* (S2 `isinfluential`),
+from any venue or field, with abstracts from the Semantic Scholar Datasets API.
+The benchmark cut used in the paper has 2,470 seeds (ACL Anthology papers in the
+within-year top 10% but not top 1% by influential-citation count, with at least
+10 qualifying citers) and 53,034 pairs; citations whose only intent label is
+"background" and citers whose abstract is not English are excluded. There is no dev/test split: the similarity threshold
+is calibrated from a system-free random-pool null on the whole set
+(`DECISIONS.md`, 2026-09-19).
 
 **Why this task.** A paper's citing literature is a realised, textual record
 of where its ideas went. Anticipating it from the abstract alone asks a model
@@ -69,27 +72,27 @@ bash scripts/run_pipeline.sh download
 # corpus (minutes) and benchmark cut
 python scripts/build_acl_corpus.py all
 python scripts/make_benchmark.py --derived-root $A2A_DERIVED_ROOT --out data/acl_a2a.jsonl
-python scripts/visualise.py            # distribution of the cut -> images/*.png
+python scripts/visualise.py            # distribution of the cut -> images/*.png (the intent-similarity
+                                       # figures embed with SciNCL; --no-similarity skips them)
 
 # section 1: characterise the targets (1 GPU for embeddings)
 python scripts/characterize.py --data data/acl_a2a.jsonl --corpus-root $A2A_DERIVED_ROOT/acl_corpus
 
-# section 2: generate, then score (dev calibrates tau*, test reuses it)
-CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/generate.py --input data/acl_a2a.jsonl --split dev \
+# section 2: generate, then score (tau* is calibrated from the random-pool null each run)
+CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/generate.py --input data/acl_a2a.jsonl \
     --model meta-llama/Llama-3.3-70B-Instruct --tp 4 \
     --arms proposal_t07,proposal_t10,proposal_t13,diverse_list_t10 \
-    --output-dir results/gen/dev/llama-3.3-70b
-python scripts/score.py --split dev --calibrate
-python scripts/score.py --split test
+    --output-dir results/gen/llama-3.3-70b
+python scripts/score.py
 
 # section 3: what coverage measures that other metrics do not
-python scripts/contrast.py --split dev
+python scripts/contrast.py
 ```
 
 ## Rebuilding the benchmark text
 
-`data/acl_a2a_ids.json` lists every seed and citer id with the split and the
-parameters used. `make_benchmark.py` with the same parameters over the same
+`data/acl_a2a_ids.json` lists every seed and citer id with the parameters used,
+including the per-year influential-citation thresholds resolved at build time. `make_benchmark.py` with the same parameters over the same
 Semantic Scholar release reproduces `data/acl_a2a.jsonl` exactly; the text
 itself is not redistributed.
 

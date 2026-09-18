@@ -2,15 +2,15 @@
 """Score generation arms against the real citing abstracts, next to null and
 reference systems, and record the diversity of every prediction set.
 
-    # dev: calibrate tau* (95th pct of the random-pool null) and score
-    python scripts/score.py --data data/acl_a2a.jsonl --split dev \
-        --gen-root results/gen --calibrate --out-dir results/score
-    # test: reuse the dev tau*
-    python scripts/score.py --data data/acl_a2a.jsonl --split test \
-        --gen-root results/gen --out-dir results/score
+    python scripts/score.py --data data/acl_a2a.jsonl --gen-root results/gen --out-dir results/score
+
+tau* is the 95th percentile of the random-pool null's best similarity, computed on the
+whole benchmark every run and written to <out-dir>/tau_star_<encoder>.json. The null
+draws real citers of *other* seeds and involves no system, so there is nothing to hold
+out (DECISIONS.md 2026-09-19); --tau-star overrides it for sensitivity checks.
 
 Systems scored per seed (prediction set -> its real citers):
-  <model>/<arm>     generations found under <gen-root>/<split>/<model>/<arm>.jsonl
+  <model>/<arm>     generations found under <gen-root>/<model>/<arm>.jsonl
   null/seed_copy    the seed abstract as the single prediction
   null/random_pool  N random citers of OTHER seeds (chance level; defines tau*)
   ref/retrieval_knn N citers of other seeds nearest to the seed (what topical
@@ -22,9 +22,9 @@ Per system: pooled and per-seed coverage@tau* (bootstrap CI over seeds), by
 stratum (field match, ACL vs non-ACL citer, horizon, post-cutoff citers,
 influential flag), coverage@N, the tau-grid curve, and prediction-set
 diversity (Vendi, mean pairwise similarity, centroid dispersion, similarity
-to the seed). Writes <split>_<encoder>.json, <split>_<encoder>_per_seed.csv
-and <split>_<encoder>_per_pair.csv.gz (best similarity per pair per system,
-consumed by scripts/contrast.py).
+to the seed). Writes <encoder>.json, <encoder>_per_seed.csv and
+<encoder>_per_pair.csv.gz (best similarity per pair per system, consumed by
+scripts/contrast.py).
 """
 import argparse
 import csv
@@ -58,14 +58,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=Path, default=Path("data/acl_a2a.jsonl"))
-    ap.add_argument("--split", default="dev", choices=["dev", "test"])
     ap.add_argument("--gen-root", type=Path, default=Path("results/gen"))
     ap.add_argument("--encoder", default=DEFAULT_ENCODER)
     ap.add_argument("--emb-dir", type=Path, default=Path("results/embeddings"))
     ap.add_argument("--out-dir", type=Path, default=Path("results/score"))
-    ap.add_argument("--calibrate", action="store_true",
-                    help="set tau* from this split's random-pool null (dev only)")
-    ap.add_argument("--tau-star", type=float, default=None)
+    ap.add_argument("--tau-star", type=float, default=None,
+                    help="override the calibrated tau* (sensitivity checks only)")
     ap.add_argument("--n", type=int, default=50, help="prediction budget for nulls/refs")
     ap.add_argument("--n-boot", type=int, default=1000)
     ap.add_argument("--seed", type=int, default=0)
@@ -74,14 +72,13 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(args.seed)
 
-    seeds = [s for s in load_jsonl(args.data) if s["split"] == args.split]
+    seeds = load_jsonl(args.data)
     sid_index = {s["seed_id"]: i for i, s in enumerate(seeds)}
-    print(f"{len(seeds)} {args.split} seeds", flush=True)
+    print(f"{len(seeds)} seeds", flush=True)
 
-    # ---- generations: <gen-root>/<split>/<model>/<arm>.jsonl
+    # ---- generations: <gen-root>/<model>/<arm>.jsonl
     systems = {}  # name -> {seed_id: [texts]}
-    gen_split_dir = args.gen_root / args.split
-    for mdir in sorted(p for p in gen_split_dir.glob("*") if p.is_dir()) if gen_split_dir.exists() else []:
+    for mdir in sorted(p for p in args.gen_root.glob("*") if p.is_dir()) if args.gen_root.exists() else []:
         for arm, recs in load_generations(mdir).items():
             systems[f"{mdir.name}/{arm}"] = recs
     print(f"{len(systems)} generation systems: {list(systems)}", flush=True)
@@ -174,16 +171,13 @@ def main():
 
     # ---- tau*
     tau_file = args.out_dir / f"tau_star_{enc}.json"
-    if args.calibrate:
-        tau = M.calibrate_tau(best["null/random_pool"], 95)
-        json.dump({"tau_star": tau, "encoder": args.encoder, "split": args.split,
-                   "rule": "95th percentile of random-pool best similarity", "n": args.n},
-                  open(tau_file, "w"), indent=1)
-    elif args.tau_star is not None:
+    if args.tau_star is not None:
         tau = args.tau_star
     else:
-        assert tau_file.exists(), f"no {tau_file}; run --calibrate on dev first"
-        tau = json.load(open(tau_file))["tau_star"]
+        tau = M.calibrate_tau(best["null/random_pool"], 95)
+        json.dump({"tau_star": tau, "encoder": args.encoder, "n_seeds": len(seeds),
+                   "rule": "95th percentile of random-pool best similarity", "n": args.n},
+                  open(tau_file, "w"), indent=1)
     print(f"tau* = {tau:.4f} ({enc})", flush=True)
 
     # ---- coverage per system
@@ -222,21 +216,21 @@ def main():
     for i, s in enumerate(seeds):
         per_seed["ref/split_half"][s["seed_id"]] = {"coverage": sh[i]}
 
-    out = {"split": args.split, "encoder": args.encoder, "tau_star": tau, "n": args.n,
+    out = {"encoder": args.encoder, "tau_star": tau, "n": args.n,
            "n_seeds": len(seeds), "n_pairs": len(pairs),
            "strata_sizes": {k: int(v.sum()) for k, v in strata.items()}, "systems": results}
-    with open(args.out_dir / f"{args.split}_{enc}.json", "w") as f:
+    with open(args.out_dir / f"{enc}.json", "w") as f:
         json.dump(out, f, indent=1)
 
     cols = ["system", "seed_id", "n_pred", "coverage", "vendi", "mps", "disp", "seed_sim"] + \
         [f"cov@{n}" for n in N_GRID]
-    with open(args.out_dir / f"{args.split}_{enc}_per_seed.csv", "w", newline="") as f:
+    with open(args.out_dir / f"{enc}_per_seed.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for name, recs in per_seed.items():
             for sid, r in recs.items():
                 w.writerow({"system": name, "seed_id": sid, **r})
-    with gzip.open(args.out_dir / f"{args.split}_{enc}_per_pair.csv.gz", "wt", newline="") as f:
+    with gzip.open(args.out_dir / f"{enc}_per_pair.csv.gz", "wt", newline="") as f:
         w = csv.writer(f)
         w.writerow(["seed_id", "citer_id", "seed_sim", "same_field", "citer_acl", "horizon",
                     "post_cutoff", "influential"] + names)
@@ -257,7 +251,7 @@ def main():
               f"{p.get('citer_acl=0', {}).get('coverage', np.nan):>6.3f} "
               f"{p.get('post_cutoff=1', {}).get('coverage', np.nan):>6.3f} "
               f"{d.get('vendi', np.nan):>6.2f} {d.get('mps', np.nan):>6.3f}")
-    print(f"-> {args.out_dir}/{args.split}_{enc}.json")
+    print(f"-> {args.out_dir}/{enc}.json")
 
 
 if __name__ == "__main__":

@@ -2,10 +2,10 @@
 """Generate N candidate future-citer abstracts per seed with a vLLM model.
 
     CUDA_VISIBLE_DEVICES=0,1,2,3 python scripts/generate.py \
-        --input data/acl_a2a.jsonl --split dev \
+        --input data/acl_a2a.jsonl \
         --model meta-llama/Llama-3.3-70B-Instruct --tp 4 \
         --arms proposal_t10,proposal_t07,proposal_t13,diverse_list_t10 \
-        --output-dir results/gen/dev/llama-3.3-70b
+        --output-dir results/gen/llama-3.3-70b
 
 Resumable: re-running skips seeds listed in each arm's ``.processed`` sidecar.
 """
@@ -23,7 +23,6 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--input", type=Path, required=True)
-    ap.add_argument("--split", default="dev", choices=["dev", "test", "all"])
     ap.add_argument("--output-dir", type=Path, required=True)
     ap.add_argument("--model", required=True)
     ap.add_argument("--tp", type=int, default=1)
@@ -45,8 +44,7 @@ def main():
             if not line.strip():
                 continue
             r = json.loads(line)
-            if args.split == "all" or r["split"] == args.split:
-                seeds.append({k: r[k] for k in ("seed_id", "seed_title", "seed_abstract")})
+            seeds.append({k: r[k] for k in ("seed_id", "seed_title", "seed_abstract")})
     if args.max_seeds:
         seeds = seeds[:args.max_seeds]
     print(f"{len(seeds)} seeds x {len(arms)} arms x n={args.n} | {args.model}", flush=True)

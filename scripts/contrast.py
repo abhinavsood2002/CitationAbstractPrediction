@@ -2,7 +2,7 @@
 """Does coverage of the real citing literature measure something that
 reference-free diversity and seed-overlap metrics do not?
 
-    python scripts/contrast.py --split dev --encoder malteos/scincl \
+    python scripts/contrast.py --encoder malteos/scincl \
         --gen-root results/gen --score-dir results/score --out-dir results/contrast
 
 Three analyses, all on the per-seed / per-pair tables written by score.py:
@@ -42,7 +42,6 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=Path, default=Path("data/acl_a2a.jsonl"))
-    ap.add_argument("--split", default="dev", choices=["dev", "test"])
     ap.add_argument("--encoder", default="malteos/scincl")
     ap.add_argument("--gen-root", type=Path, default=Path("results/gen"))
     ap.add_argument("--score-dir", type=Path, default=Path("results/score"))
@@ -54,9 +53,9 @@ def main():
     enc = short_name(args.encoder)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    seeds = {s["seed_id"]: s for s in load_jsonl(args.data) if s["split"] == args.split}
+    seeds = {s["seed_id"]: s for s in load_jsonl(args.data)}
     per_seed = defaultdict(dict)
-    with open(args.score_dir / f"{args.split}_{enc}_per_seed.csv") as f:
+    with open(args.score_dir / f"{enc}_per_seed.csv") as f:
         for r in csv.DictReader(f):
             per_seed[r["system"]][r["seed_id"]] = {k: float(v) if v not in ("", None) else np.nan
                                                    for k, v in r.items() if k not in ("system", "seed_id")}
@@ -67,7 +66,7 @@ def main():
     lex_sids = sorted(seeds, key=lambda s: int(s))[:args.max_seeds_lexical]
     for name in gen_systems:
         model, arm = name.split("/", 1)
-        recs = load_generations(args.gen_root / args.split / model).get(arm, {})
+        recs = load_generations(args.gen_root / model).get(arm, {})
         for sid in lex_sids:
             texts = recs.get(sid, [])
             if not texts or sid not in per_seed[name]:
@@ -117,7 +116,7 @@ def main():
 
     # ---- C: coverage by target seed-similarity decile
     tau = json.load(open(args.score_dir / f"tau_star_{enc}.json"))["tau_star"]
-    with gzip.open(args.score_dir / f"{args.split}_{enc}_per_pair.csv.gz", "rt") as f:
+    with gzip.open(args.score_dir / f"{enc}_per_pair.csv.gz", "rt") as f:
         rd = csv.reader(f)
         header = next(rd)
         rows = [r for r in rd]
@@ -129,12 +128,12 @@ def main():
     by_decile = {n: [float(np.nanmean(best[n][dec == d] >= tau)) for d in range(10)] for n in sys_cols}
     decile_edges = [float(e) for e in edges]
 
-    out = {"split": args.split, "encoder": args.encoder, "tau_star": tau,
+    out = {"encoder": args.encoder, "tau_star": tau,
            "A_spearman_coverage_vs_alt": corr, "B_system_table": table, "B_rankings": rankings,
            "C_coverage_by_target_seed_sim_decile": {"decile_edges": decile_edges, "systems": by_decile}}
-    with open(args.out_dir / f"{args.split}_{enc}.json", "w") as f:
+    with open(args.out_dir / f"{enc}.json", "w") as f:
         json.dump(out, f, indent=1)
-    make_figures(args.out_dir, enc, args.split, corr, by_decile, gen_systems)
+    make_figures(args.out_dir, enc, corr, by_decile, gen_systems)
 
     print(f"\nA. pooled Spearman rho(coverage, metric) over {len(gen_systems)} systems")
     for alt, r in corr["pooled"].items():
@@ -143,10 +142,10 @@ def main():
     print(f"  {'system':<40} " + " ".join(f"{k:>9}" for k in ['coverage'] + ALT))
     for name, t in table.items():
         print(f"  {name:<40} " + " ".join(f"{t[k]:>9.3f}" for k in ['coverage'] + ALT))
-    print(f"-> {args.out_dir}/{args.split}_{enc}.json")
+    print(f"-> {args.out_dir}/{enc}.json")
 
 
-def make_figures(out_dir, enc, split, corr, by_decile, gen_systems):
+def make_figures(out_dir, enc, corr, by_decile, gen_systems):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -172,7 +171,7 @@ def make_figures(out_dir, enc, split, corr, by_decile, gen_systems):
     ax.set_ylabel("coverage@tau*"); ax.set_title("C: which citers get covered?")
     ax.legend(fontsize=6, ncol=2)
     fig.tight_layout()
-    fig.savefig(out_dir / f"contrast_{split}_{enc}.png", dpi=150)
+    fig.savefig(out_dir / f"contrast_{enc}.png", dpi=150)
     plt.close(fig)
 
 

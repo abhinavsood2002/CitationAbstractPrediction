@@ -110,8 +110,7 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     seeds = load_jsonl(args.data)
-    summary = {"n_seeds": len(seeds), "n_pairs": sum(len(s["citers"]) for s in seeds),
-               "n_dev": sum(s["split"] == "dev" for s in seeds)}
+    summary = {"n_seeds": len(seeds), "n_pairs": sum(len(s["citers"]) for s in seeds)}
     years = [s["seed_year"] for s in seeds]
     summary["seed_year_counts"] = dict(sorted(Counter(years).items()))
     summary["n_citers_qualifying"] = q([s["n_citers_qualifying"] for s in seeds])
