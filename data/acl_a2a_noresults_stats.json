@@ -1,0 +1,27 @@
+{
+  "source": "/home/abhinav/2026/CitationAbstractPrediction/data/acl_a2a.jsonl",
+  "model": "google/gemma-4-26B-A4B-it",
+  "removed_labels": [
+    "OTHER",
+    "RESULT"
+  ],
+  "splitter": "pysbd 0.3.4",
+  "citers": 35997,
+  "citers_emptied": 21,
+  "citers_one_sentence_left": 342,
+  "citers_unchanged": 1854,
+  "citers_unlabelled_too_long": 0,
+  "label_BACKGROUND": 88921,
+  "label_METHOD": 62340,
+  "label_OBJECTIVE": 43785,
+  "label_OTHER": 9194,
+  "label_RESULT": 61437,
+  "label_UNPARSED": 53,
+  "pairs": 53001,
+  "seeds": 2469,
+  "sentences": 265730,
+  "sentences_removed": 70631,
+  "pairs_dropped_emptied": 24,
+  "seeds_dropped_under_floor": 1,
+  "pairs_dropped_with_seed": 9
+}

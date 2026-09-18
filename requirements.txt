@@ -10,6 +10,7 @@ sentence-transformers>=3.0
 sacrebleu>=2.4
 rouge-score
 matplotlib>=3.8
+pysbd==0.3.4
 pytest>=8
 # generation only (needs a CUDA wheel matching your driver):
 # vllm>=0.10

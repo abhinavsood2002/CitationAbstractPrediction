@@ -16,6 +16,8 @@ dependencies = [
     "sacrebleu>=2.4",
     "rouge-score",
     "matplotlib>=3.8",
+    "langdetect>=1.0.9",
+    "pysbd==0.3.4",  # abstract_sentence_result_removal: stored labels are per pysbd sentence
 ]
 
 [project.optional-dependencies]
