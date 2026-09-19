@@ -1,68 +1,74 @@
 """Metrics for the abstract-to-abstract task.
 
-All similarity inputs are cosine similarities between unit-norm embeddings.
-A *prediction set* is the N abstracts produced for one seed; the *target set*
-is that seed's real citing-paper abstracts.
+A *generation set* is the 51 abstracts produced for one seed; the *targets* are
+that seed's real citing abstracts (result sentences removed). Embeddings are
+unit-norm, so every similarity below is a cosine.
 
-Primary metric
---------------
-``coverage_at(sim, tau)``: fraction of targets whose best similarity over the
-prediction set is at least ``tau``. ``sim`` is (n_predictions, n_targets).
-The operating threshold ``tau*`` is not chosen by hand: it is the 95th
-percentile of the best-similarity distribution obtained when the prediction
-set is a random pool of other seeds' citers (``calibrate_tau``), so
-coverage@tau* reads as "targets matched better than 95% of chance matches".
+Reported metrics
+----------------
+``recall_at_k``: a generation *matches* a citer when the reranker's probability
+for the pair exceeds ``llm.MATCH_THRESHOLD``. With ``m`` of a seed's ``n``
+generations matching a citer, Recall@k is the probability that a uniformly
+drawn size-k subset of the generations contains a match,
+``1 - C(n - m, k) / C(n, k)``, averaged over citers. It is the expectation of
+"any match in the first k" over generation orderings, so it does not depend on
+the order the sampler happened to emit. Headline k = 10 and 51; ``K_GRID`` is
+the curve.
 
-Diversity of a set
-------------------
+``cosine_coverage``: for each citer, the highest cosine to any generation;
+averaged over citers. Threshold-free and reranker-free.
+
 ``vendi_score``: exponentiated entropy of the eigenvalues of the normalised
-similarity kernel (Friedman & Dieng 2023) = effective number of distinct
-items. ``mean_pairwise_sim``: mean off-diagonal cosine. These describe a set
-on its own, with no reference, which is exactly what the contrast analysis
-needs: a reference-free diversity can be high while coverage of the real
-futures stays low.
+cosine kernel of a generation set (Friedman & Dieng 2023) = effective number
+of distinct generations. Vendi@51 is over all 51.
 
-Lexical diversity (``self_bleu``, ``distinct_n``) and reference overlap
-(``rouge_l_max``) are the conventional metrics we contrast against.
+All three are means over citers (pairs) or seeds; ``bootstrap_pooled_ci``
+resamples seeds, since citers of one seed are not independent.
+
+``mean_pairwise_sim`` / ``centroid_dispersion`` (used by characterize.py) and the
+lexical metrics (``self_bleu``, ``distinct_n``, ``rouge_l_max``) are descriptive
+extras.
 """
 
 from __future__ import annotations
 
 import numpy as np
+from scipy.special import comb
 
-TAUS = tuple(round(t, 2) for t in np.arange(0.30, 0.96, 0.05))
+K_HEADLINE = (10, 51)
+K_GRID = (1,) + tuple(range(5, 51, 5)) + (51,)
 
 
-# ----------------------------------------------------------------- coverage
+# ------------------------------------------------------------------- recall
+
+def recall_at_k(m, n, k: int) -> np.ndarray:
+    """Per-citer Recall@k. ``m``: matching generations per citer; ``n``: generations
+    available for that citer's seed (scalar or array). A seed short of k generations
+    is scored at k = n."""
+    m, n = np.broadcast_arrays(np.asarray(m, dtype=float), np.asarray(n, dtype=float))
+    kk = np.minimum(k, n)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        r = 1.0 - comb(n - m, kk) / comb(n, kk)
+    return np.where(n > 0, r, 0.0)
+
+
+def recall_curve(m, n, ks=K_GRID) -> dict[int, float]:
+    return {int(k): float(np.mean(recall_at_k(m, n, k))) for k in ks}
+
+
+# ---------------------------------------------------------- cosine coverage
 
 def best_similarity(sim: np.ndarray) -> np.ndarray:
-    """Per-target max over predictions. ``sim``: (n_pred, n_targets)."""
+    """Per-target max over generations. ``sim``: (n_generations, n_targets)."""
     if sim.ndim != 2 or sim.shape[0] == 0:
         return np.full(sim.shape[-1] if sim.ndim == 2 else 0, np.nan)
     return sim.max(axis=0)
 
 
-def coverage_at(sim: np.ndarray, tau: float) -> float:
+def cosine_coverage(sim: np.ndarray) -> float:
     if sim.ndim != 2 or 0 in sim.shape:
         return float("nan")
-    return float(np.mean(best_similarity(sim) >= tau))
-
-
-def coverage_curve(best: np.ndarray, taus=TAUS) -> dict[float, float]:
-    best = np.asarray(best)
-    if best.size == 0:
-        return {float(t): float("nan") for t in taus}
-    return {float(t): float(np.mean(best >= t)) for t in taus}
-
-
-def coverage_at_n(sim: np.ndarray, tau: float, ns) -> dict[int, float]:
-    """Coverage@tau using only the first n predictions, for each n in ``ns``."""
-    return {int(n): coverage_at(sim[: int(n)], tau) for n in ns if n <= sim.shape[0]}
-
-
-def calibrate_tau(null_best: np.ndarray, percentile: float = 95.0) -> float:
-    """tau* = given percentile of the null (random-pool) best-similarity."""
-    return float(np.percentile(np.asarray(null_best), percentile))
+    return float(best_similarity(sim).mean())
 
 
 # ----------------------------------------------------------------- diversity
@@ -92,27 +98,6 @@ def centroid_dispersion(emb: np.ndarray) -> float:
     c = emb.mean(axis=0)
     c = c / (np.linalg.norm(c) + 1e-12)
     return float(np.mean(1.0 - emb @ c))
-
-
-def split_half_coverage(emb: np.ndarray, tau: float, n_pred: int, rng: np.random.Generator,
-                        repeats: int = 5) -> float:
-    """Reference ceiling: real targets predicting held-out real targets.
-
-    Randomly split the target set; up to ``n_pred`` items of one half act as
-    the prediction set for the other half. Averaged over ``repeats``.
-    Answers "at this budget, how much of the realised future does a set of
-    *other real futures of the same paper* cover?"
-    """
-    n = emb.shape[0]
-    if n < 4:
-        return float("nan")
-    vals = []
-    for _ in range(repeats):
-        perm = rng.permutation(n)
-        half = n // 2
-        pred, tgt = perm[:half][:n_pred], perm[half:]
-        vals.append(coverage_at(emb[pred] @ emb[tgt].T, tau))
-    return float(np.mean(vals))
 
 
 # ------------------------------------------------------------------ lexical
@@ -173,3 +158,19 @@ def bootstrap_mean_ci(values, n_boot: int = 1000, seed: int = 0, alpha: float = 
     boots = rng.choice(v, size=(n_boot, v.size), replace=True).mean(axis=1)
     lo, hi = np.percentile(boots, [100 * alpha / 2, 100 * (1 - alpha / 2)])
     return float(v.mean()), (float(lo), float(hi))
+
+
+def bootstrap_pooled_ci(values, groups, n_boot: int = 1000, seed: int = 0, alpha: float = 0.05):
+    """Mean of per-citer ``values`` with a percentile CI that resamples ``groups`` (seeds)."""
+    values = np.asarray(values, dtype=float)
+    _, inv = np.unique(np.asarray(groups), return_inverse=True)
+    ok = ~np.isnan(values)
+    sums = np.bincount(inv[ok], weights=values[ok], minlength=inv.max() + 1)
+    cnts = np.bincount(inv[ok], minlength=inv.max() + 1).astype(float)
+    if cnts.sum() == 0:
+        return float("nan"), (float("nan"), float("nan"))
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(sums), size=(n_boot, len(sums)))
+    boots = sums[idx].sum(axis=1) / np.maximum(cnts[idx].sum(axis=1), 1)
+    lo, hi = np.percentile(boots, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    return float(sums.sum() / cnts.sum()), (float(lo), float(hi))

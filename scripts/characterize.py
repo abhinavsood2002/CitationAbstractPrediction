@@ -5,7 +5,7 @@ has, how far they sit from the seed, and how spread out they are.
 One question per section, a fixed handful of metrics, no model in the loop.
 
     python scripts/characterize.py --data data/acl_a2a.jsonl \
-        [--corpus-root /data/derived/acl_corpus] [--encoders malteos/scincl,...] \
+        [--corpus-root /data/derived/acl_corpus] [--encoders Qwen/Qwen3-Embedding-0.6B,...] \
         --out-dir results/characterize
 
 Q1 (corpus-level, needs --corpus-root): how many citers with abstracts do ACL

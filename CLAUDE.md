@@ -20,7 +20,7 @@ append a dated entry to `DECISIONS.md` (newest at the bottom).**
 The venv is uv-managed (Python 3.11) and already has vLLM installed. Three packages are pinned by
 hand (see DECISIONS.md, 2026-09-09): `torchvision==0.26.0+cu129`, `transformers==5.7.0`,
 `huggingface-hub` 1.x. Re-resolving `xgrammar` with uv downgrades transformers to 4.x and breaks
-Gemma 4; `uv pip check` reporting xgrammar's `transformers<5` pin is expected.
+ 4; `uv pip check` reporting xgrammar's `transformers<5` pin is expected.
 
 ```bash
 . .venv/bin/activate
@@ -114,10 +114,11 @@ Key facts that span multiple files:
   numerical results (fabricated numbers inflate embedding similarity).
 - **Reasoning channels.** `a2a/llm.py` turns thinking off per model family
   (`chat_template_kwargs_for`) and strips leaked channels (`strip_reasoning`: gpt-oss Harmony,
-  Gemma `<|channel>`, Qwen/DeepSeek `<think>`). New model families go there.
+  Gemma `<|channel>`, DeepSeek-style `<think>`). New model families go there.
 - **Embeddings.** `a2a/embed.py` always returns unit-norm vectors, so `A @ B.T` is cosine everywhere
-  in `metrics.py` and the scripts. SciNCL/SPECTER use CLS pooling (`CLS_ENCODERS`), everything else
-  uses the sentence-transformers default. `embed_cached` keeps one `results/embeddings/<enc>/texts.npz`
+  in `metrics.py` and the scripts. The encoder is `Qwen/Qwen3-Embedding-0.6B` (`DEFAULT_ENCODER`;
+  bfloat16, 1,024 tokens, no instruction prompt so similarity is symmetric); batches of 5,000+ texts
+  are spread over every visible GPU. `embed_cached` keeps one `results/embeddings/<enc>/texts.npz`
   keyed by text hash; `characterize.py` and `score.py` share it, so run characterize first to warm it.
 - **System naming in score/contrast.** Generation systems are `<model>/<arm>`; baselines are
   `null/seed_copy`, `null/random_pool` (defines tau\*), `ref/retrieval_knn`, `ref/split_half`,

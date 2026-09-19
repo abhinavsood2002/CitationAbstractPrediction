@@ -1,17 +1,14 @@
 """Abstract embeddings for similarity-based scoring.
 
-Two encoders are supported, both used with unit-normalised outputs so that a
-dot product is a cosine similarity:
-
-* ``malteos/scincl`` (default): SciBERT further trained on citation-graph
-  neighbourhoods (Ostendorff et al. 2022); CLS pooling, 512 tokens.
-* ``sentence-transformers/all-MiniLM-L6-v2``: general-purpose sentence
-  encoder, mean pooling, 256 tokens. Used as the robustness check because
-  SciNCL's training objective (citation neighbours are close) is related to
-  the task being measured.
+The encoder is ``Qwen/Qwen3-Embedding-0.6B``: a general-purpose text encoder,
+last-token pooling, run in bfloat16 with 1,024 tokens. Both sides are encoded
+as documents (no instruction prompt), so the similarity is symmetric, and
+outputs are unit-normalised so that a dot product is a cosine similarity. Any
+other sentence-transformers model name is loaded with its own defaults.
 
 ``embed_cached`` keeps one ``.npz`` per (encoder, cache name) keyed by text
-hash so repeated scoring runs embed only what is new.
+hash so repeated scoring runs embed only what is new. Large batches are spread
+over every visible GPU.
 """
 
 import hashlib
@@ -19,8 +16,8 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_ENCODER = "malteos/scincl"
-CLS_ENCODERS = ("scincl", "specter")
+DEFAULT_ENCODER = "Qwen/Qwen3-Embedding-0.6B"
+MULTI_GPU_MIN_TEXTS = 5000
 
 
 def short_name(encoder: str) -> str:
@@ -28,24 +25,32 @@ def short_name(encoder: str) -> str:
 
 
 def load_encoder(encoder: str = DEFAULT_ENCODER, device: str | None = None):
-    from sentence_transformers import SentenceTransformer, models
+    from sentence_transformers import SentenceTransformer
 
-    if any(k in encoder.lower() for k in CLS_ENCODERS):
-        word = models.Transformer(encoder, max_seq_length=512)
-        pool = models.Pooling(word.get_word_embedding_dimension(), pooling_mode="cls")
-        return SentenceTransformer(modules=[word, pool], device=device)
+    if "qwen3-embedding" in encoder.lower():
+        import torch
+        model = SentenceTransformer(encoder, device=device, model_kwargs={"dtype": torch.bfloat16})
+        model.max_seq_length = 1024
+        return model
     return SentenceTransformer(encoder, device=device)
 
 
 def embed_texts(texts: list[str], encoder: str = DEFAULT_ENCODER, batch_size: int = 64,
-                device: str | None = None, model=None, show_progress: bool = True) -> np.ndarray:
-    """(n, d) float32 unit-norm embeddings in input order."""
+                device: str | None = None, model=None, show_progress: bool = True,
+                multi_gpu_min: int = MULTI_GPU_MIN_TEXTS) -> np.ndarray:
+    """(n, d) float32 unit-norm embeddings in input order. With no ``device`` given,
+    ``multi_gpu_min`` or more texts are encoded on every visible GPU (one process each)."""
     if not texts:
         return np.zeros((0, 1), dtype=np.float32)
     model = model or load_encoder(encoder, device)
-    return model.encode(texts, batch_size=batch_size, convert_to_numpy=True,
-                        normalize_embeddings=True,
-                        show_progress_bar=show_progress).astype(np.float32)
+    target = device
+    if device is None and len(texts) >= multi_gpu_min:
+        import torch
+        if torch.cuda.device_count() > 1:
+            target = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
+    return np.asarray(model.encode(texts, batch_size=batch_size, convert_to_numpy=True,
+                                   normalize_embeddings=True, device=target,
+                                   show_progress_bar=show_progress), dtype=np.float32)
 
 
 def text_key(text: str) -> str:

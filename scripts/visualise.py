@@ -20,7 +20,7 @@ one hue per entity (seeds blue, citers / pairs orange):
                              random-other-seed null, and the share of pairs above its 95th pct
     intent_similarity_hist.png  the same distributions as small-multiple histograms
 
-The two intent figures embed every abstract with ``--encoder`` (default SciNCL) through the
+The two intent figures embed every abstract with ``--encoder`` (default Qwen3-Embedding) through the
 ``results/embeddings/<enc>/texts.npz`` cache shared with characterize.py / score.py, so the
 first run needs a GPU (or ``--no-similarity``); per-pair cosines are then cached next to the
 array cache and re-plotting is instant again.
@@ -66,7 +66,7 @@ INTENT_BITS = {"background": 1, "methodology": 2, "result": 4}
 INTENT_NAMES = {0: "no label", 1: "background", 2: "methodology", 3: "background + methodology",
                 4: "result", 5: "background + result", 6: "methodology + result",
                 7: "background + methodology + result"}
-ENCODER_LABEL = {"scincl": "SciNCL", "all-minilm-l6-v2": "MiniLM"}
+ENCODER_LABEL = {"qwen3-embedding-0.6b": "Qwen3-Embedding", "all-minilm-l6-v2": "MiniLM"}
 
 
 # ---- data ---------------------------------------------------------------------------

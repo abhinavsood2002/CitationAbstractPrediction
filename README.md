@@ -32,7 +32,7 @@ a2a/
 ├── corpus.py      ACL-seed corpus (DuckDB) + deterministic benchmark cut
 ├── generate.py    vLLM generation arms (proposal prompt, temperature sweep,
 │                  explicit-diversity list prompt); crash-resilient output
-├── embed.py       SciNCL / MiniLM embeddings with an on-disk cache
+├── embed.py       Qwen3-Embedding-0.6B embeddings with an on-disk cache
 ├── metrics.py     coverage@tau, tau* calibration, Vendi, dispersion,
 │                  split-half ceiling, lexical diversity, bootstrap CIs
 └── llm.py         chat-template flags and reasoning-channel stripping
@@ -73,7 +73,7 @@ bash scripts/run_pipeline.sh download
 python scripts/build_acl_corpus.py all
 python scripts/make_benchmark.py --derived-root $A2A_DERIVED_ROOT --out data/acl_a2a.jsonl
 python scripts/visualise.py            # distribution of the cut -> images/*.png (the intent-similarity
-                                       # figures embed with SciNCL; --no-similarity skips them)
+                                       # figures embed with Qwen3-Embedding; --no-similarity skips them)
 
 # section 1: characterise the targets (1 GPU for embeddings)
 python scripts/characterize.py --data data/acl_a2a.jsonl --corpus-root $A2A_DERIVED_ROOT/acl_corpus

@@ -2,7 +2,7 @@
 """Does coverage of the real citing literature measure something that
 reference-free diversity and seed-overlap metrics do not?
 
-    python scripts/contrast.py --encoder malteos/scincl \
+    python scripts/contrast.py --encoder Qwen/Qwen3-Embedding-0.6B \
         --gen-root results/gen --score-dir results/score --out-dir results/contrast
 
 Three analyses, all on the per-seed / per-pair tables written by score.py:
@@ -32,7 +32,7 @@ from scipy.stats import spearmanr
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from a2a import metrics as M  # noqa: E402
 from a2a.corpus import load_jsonl  # noqa: E402
-from a2a.embed import short_name  # noqa: E402
+from a2a.embed import DEFAULT_ENCODER, short_name  # noqa: E402
 from a2a.generate import load_generations  # noqa: E402
 
 ALT = ["vendi", "mps", "disp", "distinct2", "self_bleu", "seed_sim", "rougeL_seed", "mean_len"]
@@ -42,7 +42,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=Path, default=Path("data/acl_a2a.jsonl"))
-    ap.add_argument("--encoder", default="malteos/scincl")
+    ap.add_argument("--encoder", default=DEFAULT_ENCODER)
     ap.add_argument("--gen-root", type=Path, default=Path("results/gen"))
     ap.add_argument("--score-dir", type=Path, default=Path("results/score"))
     ap.add_argument("--out-dir", type=Path, default=Path("results/contrast"))
