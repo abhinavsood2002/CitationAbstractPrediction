@@ -29,7 +29,9 @@ class Generator:
 
 # gpt-oss reasoning effort -> reasoning_tokens. A condition may name an effort; the
 # generator's own setting is "low". A trace that never closes is discarded and topped up.
-REASONING_TOKENS = {"low": 1024, "high": 6144}
+# "high" was tried and dropped: traces averaged 3.2k tokens (p95 5.7k), 2.3% of calls hit a
+# 6,144-token allowance, and the condition alone would have taken about 2 h on 8 GPUs.
+REASONING_TOKENS = {"low": 1024, "medium": 4096}
 
 GENERATORS: dict[str, Generator] = {
     # thinking off. Weights take 48.5 GiB, so the 20 GiB KV cache is near full at 256.

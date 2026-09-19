@@ -108,7 +108,7 @@ CONDITIONS: dict[str, Condition] = {
     "gemma_t10_vs": Condition("gemma", "verbalized", temperature=1.0, per_call=3,
                               max_tokens=1200),
     "gptoss": Condition("gpt-oss"),                            # reasoning effort low
-    "gptoss_high": Condition("gpt-oss", reasoning_effort="high"),
+    "gptoss_medium": Condition("gpt-oss", reasoning_effort="medium"),
 }
 
 

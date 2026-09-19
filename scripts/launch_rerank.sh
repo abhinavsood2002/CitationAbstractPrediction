@@ -2,7 +2,11 @@
 # The reranking run: one reranker process per GPU, each scoring its shard of the seeds; exits
 # when all of them have. Resumable (finished units are skipped). Runs in the foreground:
 #   nohup bash scripts/launch_rerank.sh > results/logs/launch_rerank.log 2>&1 &
-#   bash scripts/launch_rerank.sh --gen-dir results/pilot/gen --out-dir results/pilot/rerank
+#   bash scripts/launch_rerank.sh --data data/<subset>.jsonl --gen-dir results/<dir>/gen --out-dir results/<dir>/rerank
+# A unit is skipped when its file exists, whatever generations or instruction produced it:
+# delete <out-dir>/<condition>/ whenever that condition is regenerated, and the whole
+# <out-dir> when llm.RERANK_INSTRUCTION changes. Start only after every condition has all
+# of its seeds (the seed set, the sharding and the shuffled targets depend on it).
 # Extra arguments go to every scripts/rerank.py call. GPUS picks the devices (default 0-7);
 # logs: results/logs/rerank_shard_<i>$TAG.log.
 set -uo pipefail

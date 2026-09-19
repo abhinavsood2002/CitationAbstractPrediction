@@ -14,9 +14,12 @@ citers, the chance floor; see ``a2a.rerank``):
   Vendi@51         per seed, cosine kernel of its generation embeddings (own mode only)
 
 Means are over citers (Vendi: over seeds) with a 95% bootstrap CI that resamples seeds.
-Robustness: the same numbers for citers dated from CUTOFF_YEAR on (after the generators'
-training data ends) against earlier ones, and by citer year, for every condition;
-``best_gemma`` names the Gemma condition with the highest Recall@51.
+Robustness: the same numbers for citers published on or after CUTOFF_DATE (after both
+generators' training data ends) against earlier ones, and by citer year, for every
+condition; ``best_gemma`` names the Gemma condition with the highest Recall@51. The
+publication date is S2's ``publicationdate``, read from --citers-parquet; a citer without
+one counts as pre-cutoff when its year is before the cutoff year and is otherwise left out
+of both strata (``n_pairs_undated``).
 
 Writes <enc>_summary.json, <enc>_per_seed.csv and <enc>_per_pair.csv.gz (long format: one
 row per condition x mode x pair with n_gen, m and best cosine).
@@ -33,18 +36,39 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from a2a import metrics as M  # noqa: E402
-from a2a.corpus import load_jsonl  # noqa: E402
+from a2a.corpus import DERIVED_ROOT, load_jsonl  # noqa: E402
 from a2a.embed import DEFAULT_ENCODER, embed_cached, short_name  # noqa: E402
 from a2a.generate import CONDITIONS, load_generations  # noqa: E402
 from a2a.llm import MATCH_THRESHOLD  # noqa: E402
 from a2a.rerank import MODES, load_probs, target_citers  # noqa: E402
 
-CUTOFF_YEAR = 2025   # citers from this year on post-date every generator's training data
+# Gemma 4's pre-training data ends in January 2025 and gpt-oss's knowledge in June 2024, so a
+# citer published from February 2025 on is unseen by both.
+CUTOFF_DATE = "2025-02-01"
 FIRST_YEAR = 2015    # earlier citer years are pooled in the by-year table
 
 
 def year_label(y):
     return None if not y else (f"<={FIRST_YEAR - 1}" if y < FIRST_YEAR else str(y))
+
+
+def load_pubdates(parquet: Path) -> dict[str, str]:
+    """{citer id: 'YYYY-MM-DD'} for every citer that has an S2 publication date."""
+    import duckdb
+    if not parquet.exists():
+        raise SystemExit(f"{parquet} not found: pass --citers-parquet "
+                         "(<derived root>/acl_corpus/citers.parquet); the cutoff split needs it")
+    rows = duckdb.connect().execute(
+        f"SELECT CAST(corpusid AS VARCHAR), publicationdate FROM '{parquet}' "
+        "WHERE publicationdate IS NOT NULL").fetchall()
+    return dict(rows)
+
+
+def cutoff_stratum(pubdate, year):
+    """'post' | 'pre' | None (no date and not clearly before the cutoff year)."""
+    if pubdate:
+        return "post" if pubdate >= CUTOFF_DATE else "pre"
+    return "pre" if year and year < int(CUTOFF_DATE[:4]) else None
 
 
 def summarise(rows, n_boot, seed):
@@ -78,6 +102,9 @@ def main():
     ap.add_argument("--data", type=Path, default=Path("data/acl_a2a_noresults.jsonl"))
     ap.add_argument("--gen-dir", type=Path, default=Path("results/gen"))
     ap.add_argument("--rerank-dir", type=Path, default=Path("results/rerank"))
+    ap.add_argument("--citers-parquet", type=Path,
+                    default=DERIVED_ROOT / "acl_corpus" / "citers.parquet",
+                    help="S2 publication dates for the cutoff split")
     ap.add_argument("--encoder", default=DEFAULT_ENCODER)
     ap.add_argument("--emb-dir", type=Path, default=Path("results/embeddings"))
     ap.add_argument("--out-dir", type=Path, default=Path("results/score"))
@@ -92,6 +119,7 @@ def main():
     have = set.intersection(*(set(g) for g in gens.values()))
     seeds = [s for s in load_jsonl(args.data) if s["seed_id"] in have]
     print(f"{len(seeds)} seeds, conditions: {list(gens)}", flush=True)
+    pubdate = load_pubdates(args.citers_parquet)
 
     # ---- embeddings: citers share the benchmark cache, each condition keeps its own
     emb_dir = args.emb_dir / enc
@@ -134,7 +162,8 @@ def main():
                     if p is not None:
                         assert len(p) == len(P), f"{name}/{mode} {sid}: rerank is stale"
                     rows.append({"condition": name, "mode": mode, "seed_id": sid,
-                                 "citer_id": c["id"], "citer_year": c["year"], "n_gen": len(P),
+                                 "citer_id": c["id"], "citer_year": c["year"],
+                                 "citer_pubdate": pubdate.get(c["id"]), "n_gen": len(P),
                                  "m": None if p is None else int((p > MATCH_THRESHOLD).sum()),
                                  "best_cos": float((P @ E_cit[c["id"]]).max())})
             if probs and any(r["m"] is None for r in rows):
@@ -142,10 +171,11 @@ def main():
                 for r in rows:
                     r["m"] = None
             res = summarise(rows, args.n_boot, args.seed)
-            post = [r for r in rows if (r["citer_year"] or 0) >= CUTOFF_YEAR]
-            pre = [r for r in rows if 0 < (r["citer_year"] or 0) < CUTOFF_YEAR]
-            res["post_cutoff"] = summarise(post, args.n_boot, args.seed)
-            res["pre_cutoff"] = summarise(pre, args.n_boot, args.seed)
+            strata = [cutoff_stratum(r["citer_pubdate"], r["citer_year"]) for r in rows]
+            for st in ("post", "pre"):
+                res[f"{st}_cutoff"] = summarise([r for r, x in zip(rows, strata) if x == st],
+                                                args.n_boot, args.seed)
+            res["n_pairs_undated"] = sum(x is None for x in strata)
             res["by_citer_year"] = {
                 y: summarise([r for r in rows if year_label(r["citer_year"]) == y],
                              args.n_boot, args.seed)
@@ -155,7 +185,7 @@ def main():
 
     gemma = {n: r["own"].get("recall@51") for n, r in summary.items()
              if r["model"] == "gemma" and r["own"].get("recall@51") is not None}
-    out = {"encoder": args.encoder, "match_threshold": MATCH_THRESHOLD, "cutoff_year": CUTOFF_YEAR,
+    out = {"encoder": args.encoder, "match_threshold": MATCH_THRESHOLD, "cutoff_date": CUTOFF_DATE,
            "n_seeds": len(seeds), "best_gemma": max(gemma, key=gemma.get) if gemma else None,
            "conditions": summary}
     write_atomic(args.out_dir / f"{enc}_summary.json", lambda f: json.dump(out, f, indent=1))

@@ -3,7 +3,11 @@
 # generator on its own shard of the seeds (all of that generator's conditions), and the next
 # generator starts when all of them have exited. Resumable. Runs in the foreground:
 #   nohup bash scripts/launch_generation.sh > results/logs/launch_generation.log 2>&1 &
-#   bash scripts/launch_generation.sh --max-seeds 50 --output-dir results/pilot/gen
+#   bash scripts/launch_generation.sh --input data/<subset>.jsonl --output-dir results/<new-dir>/gen
+# Resume is keyed on seed id only: nothing records the prompt or the sampling settings, so
+# after changing either, write to a NEW --output-dir (an existing one keeps its old
+# generations). For a pilot pass a hash-sampled --input file (test_benchmark/make_subset.py);
+# --max-seeds takes the first seeds of the file, which are all early-year seeds.
 # Extra arguments go to every scripts/generate.py call. GPUS picks the devices (default 0-7),
 # GENERATORS the models (default "gemma gpt-oss"); logs: results/logs/gen_<generator>_shard_<i>$TAG.log.
 set -uo pipefail
