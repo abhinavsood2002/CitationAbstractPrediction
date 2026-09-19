@@ -5,21 +5,16 @@ import re
 from dataclasses import dataclass, field
 
 
-# Truncation is shared by every generator and every condition, so the models differ in
-# nothing but their weights and a condition in nothing but its temperature. The values are
-# Gemma 4's generation_config.json; gpt-oss's own recommendation is top_p 1.0 with no top_k,
-# and untruncated sampling alone made its sets more diverse than Gemma's on the pilot.
-TOP_P = 0.95
-TOP_K = 64
-
-
+# Each generator samples the way its authors recommend, and a condition changes nothing but
+# the temperature. Gemma 4: temperature 1.0, top_p 0.95, top_k 64 (its generation_config.json).
+# gpt-oss: temperature 1.0, top_p 1.0 and no top_k (OpenAI's model card), i.e. untruncated.
 @dataclass(frozen=True)
 class Generator:
     hf_id: str
     tp: int
     temperature: float              # the model's recommended value; a condition may override it
-    top_p: float = TOP_P
-    top_k: int = TOP_K
+    top_p: float                    # never overridden by a condition
+    top_k: int                      # 0 = no top-k truncation (vLLM)
     chat_template_kwargs: dict = field(default_factory=dict)
     reasoning_tokens: int = 0       # added to max_tokens so the trace cannot eat the answer
     # vLLM keeps its small defaults on A100s: 256 concurrent sequences per process
@@ -35,12 +30,12 @@ REASONING_TOKENS = {"low": 1024, "medium": 4096}
 
 GENERATORS: dict[str, Generator] = {
     # thinking off. Weights take 48.5 GiB, so the 20 GiB KV cache is near full at 256.
-    "gemma": Generator("google/gemma-4-26B-A4B-it", tp=1, temperature=1.0,
+    "gemma": Generator("google/gemma-4-26B-A4B-it", tp=1, temperature=1.0, top_p=0.95, top_k=64,
                        chat_template_kwargs={"enable_thinking": False}),
     # Reasoning cannot be disabled, so it runs at the lowest effort by default. Weights take
     # 13.7 GiB and at 256 sequences the 56 GiB KV cache (1.2M tokens) was 7% used, so it runs
     # 1,024 sequences, with 64 seeds (3,264 samples) per call to keep that queue full.
-    "gpt-oss": Generator("openai/gpt-oss-20b", tp=1, temperature=1.0,
+    "gpt-oss": Generator("openai/gpt-oss-20b", tp=1, temperature=1.0, top_p=1.0, top_k=0,
                          chat_template_kwargs={"reasoning_effort": "low"},
                          reasoning_tokens=REASONING_TOKENS["low"],
                          max_num_seqs=1024, batch_size=64),

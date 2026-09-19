@@ -99,8 +99,8 @@ class Condition:
         return VERBALIZED_SYSTEM.format(k=self.per_call)
 
 
-# top_p and top_k are never overridden: every condition, of both generators, samples with
-# llm.TOP_P and llm.TOP_K.
+# top_p and top_k are never overridden: every condition samples with its generator's
+# recommended values (llm.GENERATORS).
 CONDITIONS: dict[str, Condition] = {
     "gemma_t10": Condition("gemma", temperature=1.0),          # baseline
     "gemma_t05": Condition("gemma", temperature=0.5),
